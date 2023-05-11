@@ -2,3 +2,10 @@ path: D:/http-rest-api
 commands:
   - go build -o ./build/bin/app1.go cmd/apiserver/main.go
   - go build -o ./build/bin/app2.go cmd/apiserver/main.go
+
+db:
+  username: "postgres"
+  host: "localhost"
+  port: "5438"
+  dbname: "postgres"
+  sslmode: "disable"
