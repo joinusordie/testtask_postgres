@@ -20,7 +20,18 @@ import (
 
 var watcher *fsnotify.Watcher
 
+type ObserverItem struct {
+	Path     string   `mapstructure:"path"`
+	Commands []string `mapstructure:"commands"`
+}
+
+type Config struct {
+	Observer []ObserverItem `mapstructure:"obs"`
+}
+
 func main() {
+
+	var conf *Config
 
 	temp := make([]string, 0)
 
@@ -33,6 +44,12 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Fatalf("error loading env variables: %s", err.Error())
 	}
+
+	err := viper.Unmarshal(&conf)
+	if err != nil {
+		log.Fatalf("unable to decode into struct, %v", err)
+	}
+
 	db, err := repository.NewPostgresDB(repository.Config{
 		Host:     viper.GetString("db.host"),
 		Port:     viper.GetString("db.port"),
@@ -50,8 +67,10 @@ func main() {
 	// Create new watcher.
 	watcher, _ = fsnotify.NewWatcher()
 
-	if err := filepath.Walk(viper.GetString("path"), watchDir); err != nil {
-		fmt.Println("ERROR", err)
+	for _, value := range conf.Observer {
+		if err := filepath.Walk(value.Path, watchDir); err != nil {
+			fmt.Println("ERROR", err)
+		}
 	}
 
 	logrus.Print("Observer Started")
@@ -69,15 +88,19 @@ func main() {
 				if event.Has(fsnotify.Write) {
 					log.Println("modified file:", event.Name)
 				}
-				for index, value := range viper.GetStringSlice("commands") {
-					temp = strings.Split(value, " ")
-					cmd := exec.Command(temp[0], temp[1:]...)
-					cmd.Dir = viper.GetString("path")
-					fmt.Println(cmd)
-					err := cmd.Run()
-					if err != nil {
-						fmt.Printf("Команда №%d в путе %s не выполнилась, пропускаю остальные", index+1, viper.GetString("path"))
-						break
+				for _, value := range conf.Observer {
+					if strings.Contains(event.Name, string(value.Path)) {
+						for index, command := range value.Commands {
+							temp = strings.Split(command, " ")
+							cmd := exec.Command(temp[0], temp[1:]...)
+							cmd.Dir = value.Path
+							fmt.Println(cmd)
+							err := cmd.Run()
+							if err != nil {
+								fmt.Printf("Команда №%d в путе %s не выполнилась, пропускаю остальные", index+1, value.Path)
+								break
+							}
+						}
 					}
 				}
 			case err, ok := <-watcher.Errors:
