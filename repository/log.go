@@ -17,7 +17,7 @@ func NewLogDB(db *sqlx.DB) *LogDB {
 
 func (r *LogDB) RecordLog(event fsnotify.Event) error {
 	query := fmt.Sprintf("INSERT INTO %s (name, operation) values ($1, $2)", "log")
-	_, err := r.db.Exec(query, event.Name, event.Op)
+	_, err := r.db.Exec(query, event.Name, event.Op.String())
 
 	return err
 }

@@ -5,8 +5,10 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
@@ -31,7 +33,6 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Fatalf("error loading env variables: %s", err.Error())
 	}
-
 	db, err := repository.NewPostgresDB(repository.Config{
 		Host:     viper.GetString("db.host"),
 		Port:     viper.GetString("db.port"),
@@ -48,13 +49,12 @@ func main() {
 
 	// Create new watcher.
 	watcher, _ = fsnotify.NewWatcher()
-	defer watcher.Close()
 
 	if err := filepath.Walk(viper.GetString("path"), watchDir); err != nil {
 		fmt.Println("ERROR", err)
 	}
 
-	done := make(chan bool)
+	logrus.Print("Observer Started")
 
 	// Start listening for events.
 	go func() {
@@ -69,13 +69,14 @@ func main() {
 				if event.Has(fsnotify.Write) {
 					log.Println("modified file:", event.Name)
 				}
-				for _, value := range viper.GetStringSlice("commands") {
+				for index, value := range viper.GetStringSlice("commands") {
 					temp = strings.Split(value, " ")
 					cmd := exec.Command(temp[0], temp[1:]...)
 					cmd.Dir = viper.GetString("path")
 					fmt.Println(cmd)
 					err := cmd.Run()
 					if err != nil {
+						fmt.Printf("Команда №%d в путе %s не выполнилась, пропускаю остальные", index+1, viper.GetString("path"))
 						break
 					}
 				}
@@ -88,7 +89,19 @@ func main() {
 		}
 	}()
 
-	<-done
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+	<-quit
+
+	logrus.Print("Observer Shutting Down")
+
+	if err := db.Close(); err != nil {
+		logrus.Errorf("error occured on db connectrion close: %s", err.Error())
+	}
+
+	if err := watcher.Close(); err != nil {
+		logrus.Errorf("error occured on observer close: %s", err.Error())
+	}
 }
 
 func watchDir(path string, fi os.FileInfo, err error) error {
