@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -21,8 +22,11 @@ import (
 var watcher *fsnotify.Watcher
 
 type ObserverItem struct {
-	Path     string   `mapstructure:"path"`
-	Commands []string `mapstructure:"commands"`
+	Path          string   `mapstructure:"path"`
+	Commands      []string `mapstructure:"commands"`
+	IncludeRegexp []string `mapstructure:"include_regexp"`
+	ExcludeRegexp []string `mapstructure:"exclude_regexp"`
+	LogFile       string   `mapstructure:"log_file"`
 }
 
 type Config struct {
@@ -83,23 +87,34 @@ func main() {
 				if !ok {
 					return
 				}
-				repos.RecordLog(event)
 				log.Println("event:", event)
-				if event.Has(fsnotify.Write) {
-					log.Println("modified file:", event.Name)
-				}
-				for _, value := range conf.Observer {
-					if strings.Contains(event.Name, string(value.Path)) {
-						for index, command := range value.Commands {
-							temp = strings.Split(command, " ")
-							cmd := exec.Command(temp[0], temp[1:]...)
-							cmd.Dir = value.Path
-							fmt.Println(cmd)
-							err := cmd.Run()
-							if err != nil {
-								fmt.Printf("Команда №%d в путе %s не выполнилась, пропускаю остальные", index+1, value.Path)
-								break
-							}
+				for _, cfg := range conf.Observer {
+					if !strings.Contains(event.Name, string(cfg.Path)) {
+						break
+					}
+					if !regexp.MustCompile(strings.Join(cfg.IncludeRegexp, "|")).MatchString(event.Name) {
+						break
+					}
+					if regexp.MustCompile(strings.Join(cfg.ExcludeRegexp, "|")).MatchString(event.Name) {
+						break
+					}
+					repos.RecordLog(event)
+					log.Println("event:", event)
+					if event.Has(fsnotify.Write) {
+						log.Println("modified file:", event.Name)
+					}
+
+					for index, command := range cfg.Commands {
+						temp = strings.Split(command, " ")
+						cmd := exec.Command(temp[0], temp[1:]...)
+						cmd.Dir = cfg.Path
+						logError, err := cmd.CombinedOutput()
+						if len(cfg.LogFile) != 0 && len(string(logError)) != 0 {
+							writeLogToFile(cfg.Path+cfg.LogFile, string(logError))
+						}
+						if err != nil {
+							log.Printf("Command №%d in path %s failed, skipping the rest \n", index+1, cfg.Path)
+							break
 						}
 					}
 				}
@@ -143,4 +158,16 @@ func initConfig() error {
 	viper.AddConfigPath("configs")
 	viper.SetConfigName("config")
 	return viper.ReadInConfig()
+}
+
+func writeLogToFile(path string, logError any) {
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Println(err)
+	}
+
+	logInfo := log.New(f, "INFO\t", log.LstdFlags)
+	logInfo.Println(logError)
+	f.Close()
 }
