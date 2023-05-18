@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -73,7 +72,7 @@ func main() {
 
 	for _, value := range conf.Observer {
 		if err := filepath.Walk(value.Path, watchDir); err != nil {
-			fmt.Println("ERROR", err)
+			log.Fatalf("failed to initialize path: %s", err.Error())
 		}
 	}
 
@@ -87,21 +86,22 @@ func main() {
 				if !ok {
 					return
 				}
-				log.Println("event:", event)
 				for _, cfg := range conf.Observer {
 					if !strings.Contains(event.Name, string(cfg.Path)) {
-						break
+						continue
 					}
-					if !regexp.MustCompile(strings.Join(cfg.IncludeRegexp, "|")).MatchString(event.Name) {
-						break
-					}
-					if regexp.MustCompile(strings.Join(cfg.ExcludeRegexp, "|")).MatchString(event.Name) {
-						break
-					}
+
 					repos.RecordLog(event)
 					log.Println("event:", event)
 					if event.Has(fsnotify.Write) {
 						log.Println("modified file:", event.Name)
+					}
+
+					if !regexp.MustCompile(strings.Join(cfg.IncludeRegexp, "|")).MatchString(event.Name) {
+						continue
+					}
+					if regexp.MustCompile(strings.Join(cfg.ExcludeRegexp, "|")).MatchString(event.Name) && (len(cfg.ExcludeRegexp) != 0){
+						continue
 					}
 
 					for index, command := range cfg.Commands {

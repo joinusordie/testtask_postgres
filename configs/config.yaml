@@ -7,12 +7,12 @@ obs:
     exclude_regexp:
       - .*._test.go
     commands:
-      - go build -o ./build/bin/app1.go cmd/apiserver/main.go
-      - go buid -o ./build/bin/app1.go cmd/apiserver/main.go
+      - go build -o ./build/bin/app1.exe cmd/apiserver/main.go
+      - go buid -o ./build/bin/app1.exe cmd/apiserver/main.go
 
   - path: D:\app_todo
     commands:
-      - go build -o ./build/bin/app1.go
+      - go build -o ./build/bin/app1.exe
 
 db:
   username: "postgres"
